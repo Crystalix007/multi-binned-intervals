@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/crystalix007/multi-binned-intervals/interval"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 )
 
@@ -165,7 +164,6 @@ func TestTree_resizing(t *testing.T) {
 	require.True(t, ok)
 
 	slices.Sort(intersections)
-	spew.Dump(intersections)
 
 	require.Len(t, intersections, 100)
 }
