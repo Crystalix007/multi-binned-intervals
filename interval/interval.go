@@ -7,11 +7,20 @@ import (
 	"slices"
 )
 
-// branchingFactorPower is the power that 2 is raised to in order to get the
-// branching factor of the hierarchical interval tree.
-//
-// i.e. 4 -> 2^4 = 16
-const branchingFactorPower = 4
+const (
+	// branchingFactorPower is the power that 2 is raised to in order to get the
+	// branching factor of the hierarchical interval tree.
+	//
+	// i.e. 4 -> 2^4 = 16
+	branchingFactorPower = 4
+
+	// maxLeafFanout is the maximum number of intervals that a leaf node can
+	// store.
+	//
+	// This is a performance tweakable that can be adjusted based on the
+	// expected number of intervals.
+	maxLeafFanout = 16
+)
 
 // Interval represents the closed interval [Start, End].
 type Interval struct {
@@ -102,7 +111,7 @@ func (v valueIndices) Sorted() []int {
 
 // node is the interface that all node types in the interval tree implement.
 type node interface {
-	Add(interval Interval, valuesIndex int)
+	Add(interval Interval, valuesIndex int) node
 	AllIntersections(start, end uint64) valueIndices
 }
 
@@ -116,10 +125,6 @@ type hierarchicalNode struct {
 func newHierarchicalNode() *hierarchicalNode {
 	node := hierarchicalNode{
 		children: make([]node, 1<<branchingFactorPower),
-	}
-
-	for i := range node.children {
-		node.children[i] = &leafNode{}
 	}
 
 	return &node
@@ -137,7 +142,7 @@ type leafNode struct {
 var _ node = &leafNode{}
 
 // Add inserts a new interval into the interval tree.
-func (h *hierarchicalNode) Add(interval Interval, valuesIndex int) {
+func (h *hierarchicalNode) Add(interval Interval, valuesIndex int) node {
 	// Indices are split into two parts:
 	//
 	// MSB Bits:  0123    4567 ...
@@ -161,8 +166,14 @@ func (h *hierarchicalNode) Add(interval Interval, valuesIndex int) {
 			newInterval.End = interval.End << branchingFactorPower
 		}
 
-		h.children[i].Add(newInterval, valuesIndex)
+		if h.children[i] == nil {
+			h.children[i] = &leafNode{}
+		}
+
+		h.children[i] = h.children[i].Add(newInterval, valuesIndex)
 	}
+
+	return h
 }
 
 // AllIntersections returns all values in the interval tree that intersect with
@@ -189,7 +200,7 @@ func (h hierarchicalNode) AllIntersections(start uint64, end uint64) valueIndice
 	// buckets should be searched from the very beginning.
 	var (
 		bucketOffsetStart uint64 = start << branchingFactorPower
-		bucketOffsetEnd   uint64 = math.MaxInt64
+		bucketOffsetEnd   uint64 = math.MaxUint64
 	)
 
 	for i := startBucketIndex; i <= endBucketIndex; i++ {
@@ -203,6 +214,11 @@ func (h hierarchicalNode) AllIntersections(start uint64, end uint64) valueIndice
 			bucketOffsetEnd = end << branchingFactorPower
 		}
 
+		// If the bucket is nil, then there are no intervals in this bucket.
+		if h.children[i] == nil {
+			continue
+		}
+
 		intersections := h.children[i].AllIntersections(bucketOffsetStart, bucketOffsetEnd)
 
 		if len(intersections) > 0 {
@@ -214,9 +230,64 @@ func (h hierarchicalNode) AllIntersections(start uint64, end uint64) valueIndice
 }
 
 // Add inserts a new interval into the interval tree.
-func (l *leafNode) Add(interval Interval, valuesIndex int) {
+func (l *leafNode) Add(interval Interval, valuesIndex int) node {
+	// If this leaf node is full, we need to convert it into a hierarchical
+	// node.
+	//
+	// Only check if len(l.intervals) == maxLeafFanout, or 2 * maxLeafFanout,
+	// or 3 * maxLeafFanout, etc. since we don't want to check too frequently,
+	// but we also don't want to only check once and then reach unbounded
+	// growth.
+	if len(l.intervals) > 0 &&
+		len(l.intervals)%maxLeafFanout == 0 &&
+		l.shouldSplit() {
+		h := newHierarchicalNode()
+
+		for i, interval := range l.intervals {
+			h.Add(interval, l.indices[i])
+		}
+
+		return h.Add(interval, valuesIndex)
+	}
+
 	l.intervals = append(l.intervals, interval)
 	l.indices = append(l.indices, valuesIndex)
+
+	return l
+}
+
+// shouldSplit returns whether the leaf node should be split.
+//
+// This checks if there would be any benefit to splitting the leaf node.
+func (l *leafNode) shouldSplit() bool {
+	hierarchicalStartOffsetCount := make(map[uint64]int, len(l.intervals))
+	hierarchicalEndOffsetCount := make(map[uint64]int, len(l.intervals))
+
+	for _, interval := range l.intervals {
+		allButLastOffsetStart := interval.Start & (math.MaxUint64 - (1 << branchingFactorPower))
+		allButLastOffsetEnd := interval.End & (math.MaxUint64 - (1 << branchingFactorPower))
+
+		hierarchicalStartOffsetCount[allButLastOffsetStart]++
+		hierarchicalEndOffsetCount[allButLastOffsetEnd]++
+	}
+
+	for _, count := range hierarchicalStartOffsetCount {
+		// If any bucket contains some intervals, but not all of them, then we
+		// should split the leaf node.
+		if count != 0 && count != len(l.intervals) {
+			return true
+		}
+	}
+
+	for _, count := range hierarchicalEndOffsetCount {
+		// If any bucket contains some intervals, but not all of them, then we
+		// should split the leaf node.
+		if count != 0 && count != len(l.intervals) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // AllIntersections returns all values in the interval tree that intersect with

@@ -2,9 +2,11 @@ package interval_test
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/crystalix007/multi-binned-intervals/interval"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,4 +66,23 @@ func TestTree(t *testing.T) {
 		require.True(t, ok)
 		require.ElementsMatch(t, []string{"a", "b"}, intersections)
 	})
+}
+
+func TestTree_resizing(t *testing.T) {
+	t.Parallel()
+
+	tree := interval.New[int]()
+
+	for i := 0; i < 100; i++ {
+		tree.Add(interval.Interval{Start: uint64(i), End: uint64(i + 1)}, i)
+	}
+
+	intersections, ok := tree.AllIntersections(0, 1600)
+
+	require.True(t, ok)
+
+	slices.Sort(intersections)
+	spew.Dump(intersections)
+
+	require.Len(t, intersections, 100)
 }
