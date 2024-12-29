@@ -14,9 +14,9 @@ const (
 	// i.e. 4 -> 2^4 = 16
 	branchingFactorPower uint64 = 4
 
-	// branchingElementCount is the number of child elements in a single
+	// hierarchicalFanout is the number of child elements in a single
 	// hierarchical node.
-	branchingElementCount uint64 = 1 << branchingFactorPower
+	hierarchicalFanout uint64 = 1 << branchingFactorPower
 
 	// offsetMask is the mask used to extract the offset from the interval
 	// start and end.
@@ -136,7 +136,7 @@ type hierarchicalNode struct {
 // newHierarchicalNode creates a new hierarchical node.
 func newHierarchicalNode() *hierarchicalNode {
 	node := hierarchicalNode{
-		Children: make([]node, branchingElementCount),
+		Children: make([]node, hierarchicalFanout),
 	}
 
 	return &node

@@ -43,6 +43,56 @@ func TestLeafNode_ShouldSplit_splittable(t *testing.T) {
 	require.True(t, leaf.ShouldSplit())
 }
 
+func TestLeafNode_Add_splitting(t *testing.T) {
+	t.Parallel()
+
+	var leaf interval.Node = &interval.LeafNode{}
+
+	// Create a leaf node with enough nodes to be considered for branching.
+	subBucketSize := 1 << (64 - interval.BranchingFactorPower)
+
+	for i := range interval.MaxLeafFanout {
+		leaf = leaf.Add(interval.Interval{Start: uint64(i * subBucketSize), End: uint64(i * subBucketSize)}, i)
+	}
+
+	var expectedLeafNode interval.LeafNode
+
+	for i := range interval.MaxLeafFanout {
+		expectedLeafNode.Indices = append(expectedLeafNode.Indices, i)
+		expectedLeafNode.Intervals = append(expectedLeafNode.Intervals, interval.Interval{Start: uint64(i * subBucketSize), End: uint64(i * subBucketSize)})
+	}
+
+	require.Equal(t, &expectedLeafNode, leaf)
+
+	// Add one more interval to trigger the split.
+	leaf = leaf.Add(interval.Interval{Start: 1, End: 1}, interval.MaxLeafFanout)
+
+	expectedHierarchicalNode := interval.HierarchicalNode{
+		Children: make([]interval.Node, interval.HierarchicalFanout),
+	}
+
+	// The leaf node should have been converted into a hierarchical node, but
+	// the new leaf nodes should be the first child with the same elements.
+	for i := range interval.MaxLeafFanout {
+		expectedNewLeafNode := interval.LeafNode{
+			Indices:   []int{i},
+			Intervals: []interval.Interval{{Start: 0, End: 0}},
+		}
+
+		expectedHierarchicalNode.Children[i] = &expectedNewLeafNode
+	}
+
+	// Now we also need to add the final interval.
+	firstLeafNode := expectedHierarchicalNode.Children[0].(*interval.LeafNode)
+	firstLeafNode.Indices = append(firstLeafNode.Indices, interval.MaxLeafFanout)
+
+	// Has to be a new interval, because the previous one was split, and this
+	// has thus been left-shifted by [interval.BranchingFactorPower] bits.
+	firstLeafNode.Intervals = append(firstLeafNode.Intervals, interval.Interval{Start: interval.HierarchicalFanout, End: interval.HierarchicalFanout})
+
+	require.Equal(t, &expectedHierarchicalNode, leaf)
+}
+
 func TestTree(t *testing.T) {
 	t.Parallel()
 

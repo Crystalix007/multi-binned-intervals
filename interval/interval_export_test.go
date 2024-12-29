@@ -4,6 +4,15 @@ const (
 	// MaxLeafFanout is the maximum number of intervals that a leaf node can
 	// store. Re-exported [maxLeafFanout] for testing purposes.
 	MaxLeafFanout = maxLeafFanout
+
+	// BranchingFactorPower is the power of 2 that determines the branching
+	// factor of the hierarchical interval tree. Re-exported
+	// [branchingFactorPower].
+	BranchingFactorPower = branchingFactorPower
+
+	// HierarchicalFanout is the maximum number of children that a hierarchical
+	// node can store. Re-exported [hierarchicalFanout] for testing purposes.
+	HierarchicalFanout = hierarchicalFanout
 )
 
 // Node reexports the internal [node] type.
