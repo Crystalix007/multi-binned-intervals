@@ -10,6 +10,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLeafNode_ShouldSplit_unsplittable(t *testing.T) {
+	t.Parallel()
+
+	leaf := interval.LeafNode{
+		Indices: []int{0},
+		Intervals: []interval.Interval{
+			{Start: 0, End: 0},
+		},
+	}
+
+	// Add more intervals than the predicate to split, but with indices that
+	// cannot be split efficiently.
+	for i := range interval.MaxLeafFanout {
+		leaf.Add(interval.Interval{Start: uint64(1), End: uint64(1)}, 1+i)
+	}
+
+	require.False(t, leaf.ShouldSplit())
+}
+
+func TestLeafNode_ShouldSplit_splittable(t *testing.T) {
+	t.Parallel()
+
+	// Create a leaf node with 16 intervals that can be split across different
+	// buckets (i.e. are different in more than their last 4 bits).
+	var leaf interval.LeafNode
+
+	for i := range interval.MaxLeafFanout {
+		leaf.Add(interval.Interval{Start: uint64(i), End: uint64(i + 1)}, i)
+	}
+
+	require.True(t, leaf.ShouldSplit())
+}
+
 func TestTree(t *testing.T) {
 	t.Parallel()
 
