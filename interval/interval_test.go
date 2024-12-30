@@ -74,6 +74,7 @@ func TestLeafNode_Add_splitting(t *testing.T) {
 	// the new leaf nodes should be the first child with the same elements.
 	for i := range interval.MaxLeafFanout {
 		expectedNewLeafNode := interval.LeafNode{
+			Depth:     interval.BranchingFactorPower,
 			Indices:   []int{i},
 			Intervals: []interval.Interval{{Start: 0, End: 0}},
 		}

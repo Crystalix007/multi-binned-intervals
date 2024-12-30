@@ -12,11 +12,11 @@ const (
 	// branching factor of the hierarchical interval tree.
 	//
 	// i.e. 4 -> 2^4 = 16
-	branchingFactorPower uint64 = 4
+	branchingFactorPower uint8 = 4
 
 	// hierarchicalFanout is the number of child elements in a single
 	// hierarchical node.
-	hierarchicalFanout uint64 = 1 << branchingFactorPower
+	hierarchicalFanout uint64 = 1 << uint64(branchingFactorPower)
 
 	// offsetMask is the mask used to extract the offset from the interval
 	// start and end.
@@ -58,7 +58,7 @@ type tree[Value any] struct {
 // New creates a new interval tree.
 func New[Value any]() Tree[Value] {
 	return &tree[Value]{
-		Root: newHierarchicalNode(),
+		Root: newHierarchicalNode(0),
 	}
 }
 
@@ -131,12 +131,14 @@ type node interface {
 // index.
 type hierarchicalNode struct {
 	Children []node
+	Depth    uint8
 }
 
 // newHierarchicalNode creates a new hierarchical node.
-func newHierarchicalNode() *hierarchicalNode {
+func newHierarchicalNode(depth uint8) *hierarchicalNode {
 	node := hierarchicalNode{
 		Children: make([]node, hierarchicalFanout),
+		Depth:    depth,
 	}
 
 	return &node
@@ -147,8 +149,20 @@ var _ node = &hierarchicalNode{}
 
 // leafNode is a node that stores the intervals directly.
 type leafNode struct {
+	Depth     uint8
 	Indices   []int
 	Intervals []Interval
+}
+
+// newLeafNode creates a new leaf node.
+func newLeafNode(depth uint8) *leafNode {
+	node := leafNode{
+		Depth:     depth,
+		Indices:   make([]int, 0, maxLeafFanout),
+		Intervals: make([]Interval, 0, maxLeafFanout),
+	}
+
+	return &node
 }
 
 var _ node = &leafNode{}
@@ -179,7 +193,7 @@ func (h *hierarchicalNode) Add(interval Interval, valuesIndex int) node {
 		}
 
 		if h.Children[i] == nil {
-			h.Children[i] = &leafNode{}
+			h.Children[i] = newLeafNode(h.Depth + uint8(branchingFactorPower))
 		}
 
 		h.Children[i] = h.Children[i].Add(newInterval, valuesIndex)
@@ -253,7 +267,7 @@ func (l *leafNode) Add(interval Interval, valuesIndex int) node {
 	if len(l.Intervals) > 0 &&
 		len(l.Intervals)%maxLeafFanout == 0 &&
 		l.shouldSplit() {
-		h := newHierarchicalNode()
+		h := newHierarchicalNode(l.Depth)
 
 		for i, interval := range l.Intervals {
 			h.Add(interval, l.Indices[i])
@@ -272,6 +286,11 @@ func (l *leafNode) Add(interval Interval, valuesIndex int) node {
 //
 // This checks if there would be any benefit to splitting the leaf node.
 func (l *leafNode) shouldSplit() bool {
+	// If we are at the maximum non-branching depth, we should not split.
+	if l.Depth == 64 {
+		return false
+	}
+
 	hierarchicalStartOffsetCount := make(map[uint64]int, len(l.Intervals))
 	hierarchicalEndOffsetCount := make(map[uint64]int, len(l.Intervals))
 
